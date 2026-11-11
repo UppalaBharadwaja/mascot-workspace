@@ -218,7 +218,18 @@ ${form.source_urls || 'N/A'}
     }
   ]
 
-  const mcpConfigJson = JSON.stringify({
+  const [mcpTab, setMcpTab] = useState('cloud')
+
+  const mcpCloudConfig = JSON.stringify({
+    mcpServers: {
+      "mascot-intelligence": {
+        url: (import.meta.env.VITE_MCP_URL || "https://mascot-mcp-fins.onrender.com/mcp"),
+        transport: "streamable-http"
+      }
+    }
+  }, null, 2)
+
+  const mcpLocalConfig = JSON.stringify({
     mcpServers: {
       "mascot-intelligence": {
         url: "http://localhost:8001/mcp",
@@ -226,6 +237,8 @@ ${form.source_urls || 'N/A'}
       }
     }
   }, null, 2)
+
+  const activeMcpConfig = mcpTab === 'cloud' ? mcpCloudConfig : mcpLocalConfig
 
   return (
     <div className="shell">
@@ -683,14 +696,34 @@ ${form.source_urls || 'N/A'}
                 </p>
               </div>
 
-              <h4>1. Configure Claude Desktop</h4>
-              <p>Add this MCP server configuration to your <code>claude_desktop_config.json</code>:</p>
+              <h4>1. Configure Claude MCP Connector</h4>
+              <p>Select your deployment environment and add this configuration to your <code>claude_desktop_config.json</code>:</p>
+              
+              <div style={{ display: 'flex', gap: '8px', margin: '8px 0' }}>
+                <button
+                  type="button"
+                  className={mcpTab === 'cloud' ? 'btn-secondary active' : 'btn-secondary'}
+                  style={{ background: mcpTab === 'cloud' ? '#eef5f2' : '#fff', borderColor: mcpTab === 'cloud' ? '#2e7a5c' : '#dce1e7', fontWeight: 600, fontSize: '11.5px' }}
+                  onClick={() => setMcpTab('cloud')}
+                >
+                  Cloud / Production (Streamable HTTP)
+                </button>
+                <button
+                  type="button"
+                  className={mcpTab === 'local' ? 'btn-secondary active' : 'btn-secondary'}
+                  style={{ background: mcpTab === 'local' ? '#eef5f2' : '#fff', borderColor: mcpTab === 'local' ? '#2e7a5c' : '#dce1e7', fontWeight: 600, fontSize: '11.5px' }}
+                  onClick={() => setMcpTab('local')}
+                >
+                  Local Development (localhost:8001)
+                </button>
+              </div>
+
               <div className="code-block-container">
-                <pre><code>{mcpConfigJson}</code></pre>
+                <pre><code>{activeMcpConfig}</code></pre>
                 <button
                   className="copy-code-btn"
                   onClick={() => {
-                    navigator.clipboard.writeText(mcpConfigJson)
+                    navigator.clipboard.writeText(activeMcpConfig)
                     setCopiedConfig(true)
                     setTimeout(() => setCopiedConfig(false), 2000)
                   }}
