@@ -96,6 +96,20 @@ export default function App() {
     setMobileMenuOpen(false)
   }
 
+  function handleCancel() {
+    setIsCreating(false)
+    if (briefs.length > 0) {
+      const fallback = selectedId ? briefs.find(b => b.id === selectedId) || briefs[0] : briefs[0]
+      setSelectedId(fallback.id)
+      setForm({ ...fallback })
+    } else {
+      setSelectedId(null)
+      setForm(EMPTY_FORM)
+    }
+    setNotice('')
+    setError('')
+  }
+
   function handleSelect(brief) {
     setIsCreating(false)
     setSelectedId(brief.id)
@@ -457,6 +471,17 @@ ${form.source_urls || 'N/A'}
                     </div>
 
                     <div className="editor-actions">
+                      {isCreating && (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={handleCancel}
+                          title="Cancel creating new brief"
+                        >
+                          <X size={15} />
+                          <span>Cancel</span>
+                        </button>
+                      )}
                       {!isCreating && (
                         <>
                           <button
@@ -481,7 +506,7 @@ ${form.source_urls || 'N/A'}
                       )}
                       <button type="submit" className="primary-btn" disabled={saving}>
                         <Save size={15} />
-                        <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+                        <span>{saving ? 'Saving...' : (isCreating ? 'Create Brief' : 'Save Changes')}</span>
                       </button>
                     </div>
                   </div>
