@@ -1,7 +1,8 @@
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+from fastapi import FastAPI, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_
@@ -144,11 +145,19 @@ async def update_company_brief(
     finally:
         db.close()
 
+# Prepare MCP Starlette Sub-application
+mcp_sub_app = mcp.streamable_http_app()
+
 # FastAPI application setup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    yield
+    # Start the Streamable HTTP session manager cleanly
+    if hasattr(mcp_sub_app.router, "lifespan_context"):
+        async with mcp_sub_app.router.lifespan_context(mcp_sub_app):
+            yield
+    else:
+        yield
 
 app = FastAPI(
     title="MASCoT – Company Intelligence API & MCP Server",
@@ -183,6 +192,22 @@ def root():
         "mcp_endpoint": "/mcp",
         "mcp_transport": "streamable-http"
     }
+
+# Friendly browser info endpoint for /mcp when visited without MCP headers
+@app.get("/mcp", include_in_schema=False)
+async def mcp_browser_info(request: Request):
+    accept = request.headers.get("accept", "")
+    if "text/event-stream" not in accept:
+        return JSONResponse({
+            "service": "MASCoT Model Context Protocol (MCP) Server",
+            "status": "online",
+            "transport": "streamable-http",
+            "protocol_version": "2024-11-05",
+            "tools": ["create_company_brief", "get_company_brief", "list_company_briefs", "update_company_brief"],
+            "instructions": "Connect via Claude Desktop or an MCP client using Streamable HTTP transport."
+        })
+    # If client accepts text/event-stream, pass to MCP sub app
+    return await mcp_sub_app(request.scope, request.receive, request._send)
 
 @app.get("/health", tags=["System"])
 def health_check(db: Session = Depends(get_db)):
@@ -275,6 +300,5 @@ def delete_brief(brief_id: int, db: Session = Depends(get_db)):
     db.commit()
     return None
 
-# Mount MCP Streamable HTTP app directly into root to handle /mcp requests
-mcp_sub_app = mcp.streamable_http_app()
+# Mount MCP Streamable HTTP app directly into root to handle all POST/DELETE /mcp requests
 app.mount("", mcp_sub_app)
