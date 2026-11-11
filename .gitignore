@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+.venv/
+env/
+__pycache__/
+*.pyc
+
+# Database & runtime
+mascot.db
+*.sqlite3
+*.log
+
+# Build artifacts
+frontend/dist/
+dist/
+
+# Environment files with secrets
+.env
