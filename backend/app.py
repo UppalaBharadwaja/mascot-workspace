@@ -39,6 +39,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/", include_in_schema=False)
+def root():
+    return {
+        "service": "MASCoT Company Intelligence API",
+        "status": "online",
+        "documentation": "/docs",
+        "health": "/health"
+    }
+
 @app.get("/health", tags=["System"])
 def health_check(db: Session = Depends(get_db)):
     """Health check endpoint to verify API and database connectivity."""
