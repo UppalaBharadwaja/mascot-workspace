@@ -223,7 +223,7 @@ ${form.source_urls || 'N/A'}
   const mcpCloudConfig = JSON.stringify({
     mcpServers: {
       "mascot-intelligence": {
-        url: (import.meta.env.VITE_MCP_URL || "https://mascot-mcp-fins.onrender.com/mcp"),
+        url: (import.meta.env.VITE_MCP_URL || "https://mascot-api-fins.onrender.com/mcp"),
         transport: "streamable-http"
       }
     }

@@ -5,21 +5,154 @@ from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_
-from database import Base, engine, get_db
+from database import Base, engine, get_db, SessionLocal
 from models import CompanyBrief
 from schemas import BriefCreate, BriefUpdate, BriefOut
+from mcp.server.fastmcp import FastMCP
 
-# Ensure tables exist on load and in lifespan
+# Ensure database tables exist
 Base.metadata.create_all(bind=engine)
 
+# Initialize FastMCP Server
+mcp = FastMCP(
+    name="MASCoT Company Intelligence",
+    instructions=(
+        "MASCoT is a company intelligence workspace for the paint and commercial coatings industry. "
+        "Use these tools to store, retrieve, search, and update company briefs. "
+        "Research, reasoning, qualification, and synthesis are performed by Claude outside MASCoT; "
+        "MASCoT provides the persistent application storage, retrieval, and synchronisation layer."
+    )
+)
+
+# Define MCP Tools
+@mcp.tool()
+async def create_company_brief(
+    company_name: str,
+    industry: str = "Paint / Construction",
+    location: str = "",
+    company_overview: str = "",
+    potential_paint_requirements: str = "",
+    project_signals: str = "",
+    meeting_questions: str = "",
+    next_steps: str = "",
+    source_urls: str = ""
+) -> dict:
+    """Save a new company intelligence brief in MASCoT."""
+    db = SessionLocal()
+    try:
+        brief = CompanyBrief(
+            company_name=company_name.strip(),
+            industry=industry.strip() if industry else "Paint / Construction",
+            location=location.strip() if location else "",
+            company_overview=company_overview.strip() if company_overview else "",
+            potential_paint_requirements=potential_paint_requirements.strip() if potential_paint_requirements else "",
+            project_signals=project_signals.strip() if project_signals else "",
+            meeting_questions=meeting_questions.strip() if meeting_questions else "",
+            next_steps=next_steps.strip() if next_steps else "",
+            source_urls=source_urls.strip() if source_urls else ""
+        )
+        db.add(brief)
+        db.commit()
+        db.refresh(brief)
+        out = BriefOut.model_validate(brief).model_dump(mode="json")
+        return {
+            "success": True,
+            "id": out["id"],
+            "brief": out,
+            "message": f"Successfully created and saved brief for '{out['company_name']}' with ID {out['id']}."
+        }
+    except Exception as exc:
+        return {"success": False, "error": type(exc).__name__, "detail": str(exc)}
+    finally:
+        db.close()
+
+@mcp.tool()
+async def get_company_brief(brief_id: int) -> dict:
+    """Retrieve an individual company brief by its record ID."""
+    db = SessionLocal()
+    try:
+        brief = db.get(CompanyBrief, brief_id)
+        if not brief:
+            return {"success": False, "error": "Not Found", "detail": f"Brief {brief_id} not found"}
+        return BriefOut.model_validate(brief).model_dump(mode="json")
+    finally:
+        db.close()
+
+@mcp.tool()
+async def list_company_briefs(search: str = "") -> list[dict] | dict:
+    """List saved briefs; optionally filter by search keyword."""
+    db = SessionLocal()
+    try:
+        stmt = select(CompanyBrief).order_by(CompanyBrief.updated_at.desc())
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    CompanyBrief.company_name.ilike(term),
+                    CompanyBrief.industry.ilike(term),
+                    CompanyBrief.location.ilike(term)
+                )
+            )
+        briefs = list(db.scalars(stmt).all())
+        return [BriefOut.model_validate(b).model_dump(mode="json") for b in briefs]
+    finally:
+        db.close()
+
+@mcp.tool()
+async def update_company_brief(
+    brief_id: int,
+    company_name: str | None = None,
+    industry: str | None = None,
+    location: str | None = None,
+    company_overview: str | None = None,
+    potential_paint_requirements: str | None = None,
+    project_signals: str | None = None,
+    meeting_questions: str | None = None,
+    next_steps: str | None = None,
+    source_urls: str | None = None
+) -> dict:
+    """Update fields on an existing company brief."""
+    db = SessionLocal()
+    try:
+        brief = db.get(CompanyBrief, brief_id)
+        if not brief:
+            return {"success": False, "error": "Not Found", "detail": f"Brief {brief_id} not found"}
+        fields = {
+            "company_name": company_name,
+            "industry": industry,
+            "location": location,
+            "company_overview": company_overview,
+            "potential_paint_requirements": potential_paint_requirements,
+            "project_signals": project_signals,
+            "meeting_questions": meeting_questions,
+            "next_steps": next_steps,
+            "source_urls": source_urls
+        }
+        for k, v in fields.items():
+            if v is not None:
+                setattr(brief, k, v.strip() if isinstance(v, str) else v)
+        brief.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(brief)
+        out = BriefOut.model_validate(brief).model_dump(mode="json")
+        return {
+            "success": True,
+            "id": out["id"],
+            "brief": out,
+            "message": f"Successfully updated brief ID {brief_id} ('{out['company_name']}')."
+        }
+    finally:
+        db.close()
+
+# FastAPI application setup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     yield
 
 app = FastAPI(
-    title="MASCoT – Company Intelligence API",
-    description="Backend API for MASCoT Company Intelligence Workspace. Manages company briefs with no internal AI engine.",
+    title="MASCoT – Company Intelligence API & MCP Server",
+    description="Unified API & Model Context Protocol (MCP) server for MASCoT Company Intelligence Workspace.",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -42,19 +175,26 @@ app.add_middleware(
 @app.get("/", include_in_schema=False)
 def root():
     return {
-        "service": "MASCoT Company Intelligence API",
+        "service": "MASCoT Company Intelligence Workspace",
         "status": "online",
+        "rest_api": "/briefs",
         "documentation": "/docs",
-        "health": "/health"
+        "health": "/health",
+        "mcp_endpoint": "/mcp",
+        "mcp_transport": "streamable-http"
     }
 
 @app.get("/health", tags=["System"])
 def health_check(db: Session = Depends(get_db)):
     """Health check endpoint to verify API and database connectivity."""
     try:
-        # Simple test query to verify database connection
         db.execute(select(1)).scalar()
-        return {"status": "ok", "service": "mascot-api", "database": "connected"}
+        return {
+            "status": "ok",
+            "service": "mascot-api",
+            "database": "connected",
+            "mcp_endpoint": "/mcp"
+        }
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -134,3 +274,7 @@ def delete_brief(brief_id: int, db: Session = Depends(get_db)):
     db.delete(brief)
     db.commit()
     return None
+
+# Mount MCP Streamable HTTP app directly into root to handle /mcp requests
+mcp_sub_app = mcp.streamable_http_app()
+app.mount("", mcp_sub_app)
