@@ -10,6 +10,7 @@ from database import Base, engine, get_db, SessionLocal
 from models import CompanyBrief
 from schemas import BriefCreate, BriefUpdate, BriefOut
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 # Ensure database tables exist
 Base.metadata.create_all(bind=engine)
@@ -24,6 +25,8 @@ mcp = FastMCP(
         "MASCoT provides the persistent application storage, retrieval, and synchronisation layer."
     )
 )
+# Allow remote connections over Streamable HTTP from cloud domains (e.g. Render, Claude, Antigravity)
+mcp.settings.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
 
 # Define MCP Tools
 @mcp.tool()
